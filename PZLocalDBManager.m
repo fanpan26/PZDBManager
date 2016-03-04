@@ -40,6 +40,9 @@ NSString *const defaultDBName = @"PZLOCAL_DB.SQLLITE";
 
 +(NSString *)dbPathWithDirectoryName:(NSString *)directoryName
 {
+    
+    NSString *dbName = [[self manager] dbName];
+    dbName = dbName == nil ? defaultDBName : dbName;
     //文档路径
     NSString *doc = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) lastObject];
     
@@ -60,7 +63,7 @@ NSString *const defaultDBName = @"PZLOCAL_DB.SQLLITE";
         [fileManager createDirectoryAtPath:doc withIntermediateDirectories:YES attributes:nil error:nil];
     }
     
-    NSString *dbPath = [doc stringByAppendingPathComponent:defaultDBName];
+    NSString *dbPath = [doc stringByAppendingPathComponent: dbName];
     NSLog(@"%@",dbPath);
     return dbPath;
 }

@@ -188,9 +188,11 @@ static NSString *const propertyTypeKey = @"PROPERTY_TYPE";
 - (BOOL)remove;
 {
     PZLocalDBManager *manager = GlobalDBManager;
+    
+    NSString *tableName = [self.class tableName];
     __block BOOL result = NO;
     [manager.dbQueue inDatabase:^(FMDatabase *db) {
-        result = [db executeUpdateWithFormat:@"DELETE FROM TABLENAME WHERE unionId = %@",_unionId];
+        result = [db executeUpdateWithFormat:@"DELETE FROM %@ WHERE %@ = %@",tableName,PRIMARY_ID,_unionId];
     }];
     return  result;
 }

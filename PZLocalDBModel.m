@@ -187,12 +187,27 @@ static NSString *const propertyTypeKey = @"PROPERTY_TYPE";
 //移除一条数据
 - (BOOL)remove;
 {
+    if (_unionId) {
+        return [self removeByUnionId:_unionId];
+    }
+    return  NO;
+}
+
+- (BOOL)removeByUnionId:(NSString *)unionId
+{
+    return [self removeByWhere:[NSString stringWithFormat: @"%@ = %@",PRIMARY_ID,unionId]];
+}
+
+/*根据条件删除*/
+- (BOOL)removeByWhere:(NSString *)where
+{
+    if(!where)return  NO;
     PZLocalDBManager *manager = GlobalDBManager;
     
     NSString *tableName = [self.class tableName];
     __block BOOL result = NO;
     [manager.dbQueue inDatabase:^(FMDatabase *db) {
-        result = [db executeUpdateWithFormat:@"DELETE FROM %@ WHERE %@ = %@",tableName,PRIMARY_ID,_unionId];
+        result = [db executeUpdateWithFormat:@"DELETE FROM %@ WHERE %@",tableName,where];
     }];
     return  result;
 }

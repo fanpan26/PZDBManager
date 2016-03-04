@@ -53,6 +53,12 @@
 //移除一条数据
 - (BOOL)remove;
 
+//移除一条数据根据unionID
+- (BOOL)removeByUnionId:(NSString *)unionId;
+
+//根据某种条件删除
+- (BOOL)removeByWhere:(NSString *)where;
+
 //根据主键查询一条数据
 + (instancetype)queryByUnionId:(NSString *)unionId;
 

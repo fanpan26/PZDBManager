@@ -42,7 +42,7 @@
 + (BOOL)exists;
 
 //数据库中的字段
-+ (NSArray *)columns;
+//+ (NSArray *)columns;
 
 //添加一条数据
 - (BOOL)add;
@@ -54,13 +54,16 @@
 - (BOOL)remove;
 
 //移除一条数据根据unionID
-- (BOOL)removeByUnionId:(NSString *)unionId;
++ (BOOL)removeByUnionId:(NSString *)unionId;
 
 //根据某种条件删除
-- (BOOL)removeByWhere:(NSString *)where;
++ (BOOL)removeByWhere:(NSString *)where;
 
 //根据主键查询一条数据
 + (instancetype)queryByUnionId:(NSString *)unionId;
+
+//根据条件查询
++ (NSArray *)queryBaseWithWhere:(NSString *)where;
 
 //查询所有
 + (NSArray *)queryAll;

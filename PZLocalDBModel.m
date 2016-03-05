@@ -148,6 +148,36 @@ static NSString *const propertyTypeKey = @"PROPERTY_TYPE";
     return _insertSQL;
 }
 
+/*获取更新语句*/
+
+- (NSString *)getUpdateSQL
+{
+    static NSString *_updateSQL;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        
+        NSLog(@"第一次获取updateSQL");
+        
+        NSString *tableName = [self.class tableName];
+        NSMutableString *keyString = [NSMutableString string];
+        //拼接字符串  update tablename set a = 1,b=2,c=3,v=4 where unionid = 1
+        [self.columnNames enumerateObjectsUsingBlock:^(NSString *_cname, NSUInteger idx, BOOL * _Nonnull stop) {
+            
+            [keyString appendFormat:@"%@=?",_cname];
+    
+            if (idx < self.columnNames.count - 1) {
+                [keyString appendString:@","];
+            }
+        }];
+        _updateSQL = [NSString stringWithFormat:@"UPDATE %@ SET %@ WHERE %@ =?",tableName,keyString,PRIMARY_ID];
+    });
+    
+    NSLog(@"获取的SQL为%@",_updateSQL);
+    
+    return _updateSQL;
+
+}
+
 /*插入一条数据*/
 -(BOOL)add
 {
@@ -174,34 +204,81 @@ static NSString *const propertyTypeKey = @"PROPERTY_TYPE";
 }
 
 //数据库中的字段
-+ (NSArray *)columns{
-    return  nil;
-}
+//+ (NSArray *)columns{
+//    return  nil;
+//}
 
 //更新一条数据
 - (BOOL)udpate;
 {
-    return  YES;
+    return [self.class updateWithWhere:nil andModel:self];
+}
+
+//批量更新某个条件下的数据
++ (BOOL)updateWithWhere:(NSString *)where andModel:(PZLocalDBModel *)model
+{
+    if (!where) {
+        where = [NSString stringWithFormat:@" %@=%@",PRIMARY_ID,model.unionId];
+    }
+    NSArray *updateArray = [self.class queryBaseWithWhere:where];
+    if (!updateArray.count) {
+        return NO;
+    }
+   
+    NSMutableArray *updateValues = [NSMutableArray array];
+        [model.columnNames enumerateObjectsUsingBlock:^(NSString *columnName, NSUInteger idx, BOOL * _Nonnull stop) {
+            
+            if (![columnName isEqualToString: PRIMARY_ID]) {
+                id val = [model valueForKey:columnName];
+                if (!val) {
+                    val = @"";
+                }
+                [updateValues addObject:val];
+            }
+        }];
+    //最后，更新 newUpdateArray里面的每一个，利用循环
+    
+    PZLocalDBManager *manager = GlobalDBManager;
+    
+    NSString *updateSQL = [[self.class alloc] getUpdateSQL];
+    
+    __block BOOL result = YES;
+    //用事务更新表数据，循环更新
+    [manager.dbQueue inTransaction:^(FMDatabase *db, BOOL *rollback) {
+        
+        dispatch_apply(updateArray.count, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^(size_t index) {
+            NSMutableArray *valuesWithPrimary = updateValues;//不知道直接操作updateValues会不会有线程问题
+            
+            [valuesWithPrimary addObject:[updateArray[index] valueForKey:PRIMARY_ID]];//添加上主键
+            if (![db executeUpdate:updateSQL withArgumentsInArray:valuesWithPrimary]){
+                //更新失败
+                result  = NO;
+                *rollback = YES;
+            }
+        });
+    }];
+    return result;
 }
 
 //移除一条数据
 - (BOOL)remove;
 {
     if (_unionId) {
-        return [self removeByUnionId:_unionId];
+        return [self.class removeByUnionId:_unionId];
     }
     return  NO;
 }
 
-- (BOOL)removeByUnionId:(NSString *)unionId
++ (BOOL)removeByUnionId:(NSString *)unionId
 {
-    return [self removeByWhere:[NSString stringWithFormat: @"%@ = %@",PRIMARY_ID,unionId]];
+    return [self.class removeByWhere:[NSString stringWithFormat: @"%@ = %@",PRIMARY_ID,unionId]];
 }
 
 /*根据条件删除*/
-- (BOOL)removeByWhere:(NSString *)where
++ (BOOL)removeByWhere:(NSString *)where
 {
-    if(!where)return  NO;
+    if(!where){where = @"1=1";};
+    
     PZLocalDBManager *manager = GlobalDBManager;
     
     NSString *tableName = [self.class tableName];
@@ -214,12 +291,49 @@ static NSString *const propertyTypeKey = @"PROPERTY_TYPE";
 
 //根据主键查询一条数据
 + (instancetype)queryByUnionId:(NSString *)unionId{
-    return  [[self alloc] init];
+    NSArray *array =  [self.class queryBaseWithWhere:[NSString stringWithFormat:@" %@ = %@",PRIMARY_ID,unionId]];
+    if (array.count) {
+        return [array firstObject];
+    }
+    return  nil;
 }
 
 //查询所有
 + (NSArray *)queryAll{
-    return [NSArray array];
+    return [self.class queryBaseWithWhere:nil];
+}
+
+//基础查询
++ (NSArray *)queryBaseWithWhere:(NSString *)where{
+    PZLocalDBManager *manager = GlobalDBManager;
+    NSString *tableName  = [self.class tableName];
+    
+    NSMutableString *selectSQL = [NSMutableString stringWithFormat: @"SELECT * FROM %@",tableName];
+    if (where) {
+        [selectSQL appendFormat:@" WHERE %@",where];
+    }
+    
+    NSMutableArray *searchArray = [NSMutableArray array];
+
+    [manager.dbQueue inDatabase:^(FMDatabase *db) {
+        FMResultSet *resultSet = [db executeQuery:selectSQL];
+        while([resultSet next]) {
+            PZLocalDBModel *model = [[[self class] alloc] init];
+            for (int i = 0; i < model.columnNames.count;i ++) {
+                NSString *columnName = [model.columnNames objectAtIndex:i];
+                NSString *columnType = [model.columnTypes objectAtIndex:i];
+                if ([columnType isEqualToString:SQLTEXT] || [columnType isEqualToString:[NSString stringWithFormat:@"%@ %@",PRIMARY_KEY,SQLTEXT]]) {
+                    //给Model赋值，如果是string类型就赋值 string
+                    [model setValue:[resultSet stringForColumn:columnName] forKey:columnName];
+                }else{
+                    [model setValue:@([resultSet longLongIntForColumn:columnName]) forKey:columnName];
+                }
+                [searchArray addObject: model];
+            }
+        }
+    }];
+    //将查询结果返回
+    return [searchArray copy];
 }
 
 //创建表，已经创建的话，直接返回yes
@@ -275,7 +389,7 @@ static NSString *const propertyTypeKey = @"PROPERTY_TYPE";
 
 //清空表内容（删除所有）
 + (BOOL)clearTable{
-    return  YES;
+    return [self.class removeByWhere:nil];
 }
 
 //子类需要重写不需要存储在数据库中的字段

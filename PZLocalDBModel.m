@@ -11,6 +11,14 @@
 #import <objc/runtime.h>
 
 
+@interface PZLocalDBModel()
+{
+    NSString *_tableName;
+    PZLocalDBManager *_manager;
+}
+
+@end
+
 static NSString *const propertyNameKey = @"PROPERTY_NAME";
 static NSString *const propertyTypeKey = @"PROPERTY_TYPE";
 
@@ -25,10 +33,7 @@ static NSString *const propertyTypeKey = @"PROPERTY_TYPE";
 }
 -(NSString *)getUnionId
 {
-    NSDate *  nowDate = [NSDate date];
-    NSDateFormatter  *dateformatter = [[NSDateFormatter alloc] init];
-    [dateformatter setDateFormat:@"yyyyMMddhhmmss"];
-    NSString *unionIdString =[dateformatter stringFromDate:nowDate];
+    NSString *unionIdString = [[NSUUID UUID] UUIDString];
     return  unionIdString;
 }
 
@@ -41,6 +46,8 @@ static NSString *const propertyTypeKey = @"PROPERTY_TYPE";
         _columnTypes = [nameAndTypes objectForKey:propertyTypeKey];
     
         _unionId = [self getUnionId];
+        _tableName = [[self class] tableName];
+        _manager = GlobalDBManager;
     }
     return  self;
 }
@@ -126,8 +133,6 @@ static NSString *const propertyTypeKey = @"PROPERTY_TYPE";
     dispatch_once(&onceToken, ^{
         
         NSLog(@"第一次获取insertSQL");
-        
-        NSString *tableName = [self.class tableName];
         NSMutableString *keyString = [NSMutableString string];
         NSMutableString *valueString = [NSMutableString string];
         //拼接字符串  insert into tablename (unionid,text1,text2) values (1,2,3);
@@ -140,7 +145,7 @@ static NSString *const propertyTypeKey = @"PROPERTY_TYPE";
                 [valueString appendString:@","];
             }
         }];
-        _insertSQL = [NSString stringWithFormat:@"INSERT INTO %@ (%@) VALUES (%@)",tableName,keyString,valueString];
+        _insertSQL = [NSString stringWithFormat:@"INSERT INTO %@ (%@) VALUES (%@)",_tableName,keyString,valueString];
     });
     
     NSLog(@"获取的SQL为%@",_insertSQL);
@@ -158,7 +163,6 @@ static NSString *const propertyTypeKey = @"PROPERTY_TYPE";
         
         NSLog(@"第一次获取updateSQL");
         
-        NSString *tableName = [self.class tableName];
         NSMutableString *keyString = [NSMutableString string];
         //拼接字符串  update tablename set a = 1,b=2,c=3,v=4 where unionid = 1
         [self.columnNames enumerateObjectsUsingBlock:^(NSString *_cname, NSUInteger idx, BOOL * _Nonnull stop) {
@@ -169,7 +173,7 @@ static NSString *const propertyTypeKey = @"PROPERTY_TYPE";
                 [keyString appendString:@","];
             }
         }];
-        _updateSQL = [NSString stringWithFormat:@"UPDATE %@ SET %@ WHERE %@ =?",tableName,keyString,PRIMARY_ID];
+        _updateSQL = [NSString stringWithFormat:@"UPDATE %@ SET %@ WHERE %@ =?",_tableName,keyString,PRIMARY_ID];
     });
     
     NSLog(@"获取的SQL为%@",_updateSQL);
@@ -194,8 +198,7 @@ static NSString *const propertyTypeKey = @"PROPERTY_TYPE";
     
     NSString *sql  = [self getInsertSQL];
     //开始执行插入
-    PZLocalDBManager *manager = GlobalDBManager;
-    [manager.dbQueue inDatabase:^(FMDatabase *db) {
+    [_manager.dbQueue inDatabase:^(FMDatabase *db) {
       result = [db executeUpdate:sql withArgumentsInArray:[insertValues copy]];
     }];
     
@@ -356,35 +359,6 @@ static NSString *const propertyTypeKey = @"PROPERTY_TYPE";
         }
     }];
     return  result;
-    
-    /*  修改列数目
-     NSMutableArray *columns = [NSMutableArray array];
-     FMResultSet *resultSet = [db getTableSchema:tableName];
-     while ([resultSet next]) {
-     NSString *column = [resultSet stringForColumn:@"name"];
-     [columns addObject:column];
-     }
-     NSDictionary *dict = [self.class getAllProperties];
-     NSArray *properties = [dict objectForKey:@"name"];
-     NSPredicate *filterPredicate = [NSPredicate predicateWithFormat:@"NOT (SELF IN %@)",columns];
-     //过滤数组
-     NSArray *resultArray = [properties filteredArrayUsingPredicate:filterPredicate];
-     for (NSString *column in resultArray) {
-     NSUInteger index = [properties indexOfObject:column];
-     NSString *proType = [[dict objectForKey:@"type"] objectAtIndex:index];
-     NSString *fieldSql = [NSString stringWithFormat:@"%@ %@",column,proType];
-     NSString *sql = [NSString stringWithFormat:@"ALTER TABLE %@ ADD COLUMN %@ ",NSStringFromClass(self.class),fieldSql];
-     if (![db executeUpdate:sql]) {
-     res = NO;
-     *rollback = YES;
-     return ;
-     }
-     }
-     }];
-     
-     return res;
-
-     */
 }
 
 //清空表内容（删除所有）
@@ -397,8 +371,6 @@ static NSString *const propertyTypeKey = @"PROPERTY_TYPE";
 {
     return [NSArray array];
 }
-
-
 
 + (BOOL)exists
 {
